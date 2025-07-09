@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RideX - Register</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container">
+    <div id="registerPage" class="page active">
+      <div class="header">
+        <h1>Register for RideX</h1>
+        <p>Join our community today</p>
+      </div>
+      <div class="content">
+        <div class="alert" id="registerAlert"></div>
+        <form id="registerForm">
+          <div class="form-group">
+            <label for="registerUsername">Username:</label>
+            <input type="text" id="registerUsername" required>
+          </div>
+          <div class="form-group">
+            <label for="registerEmail">Email:</label>
+            <input type="email" id="registerEmail" required>
+          </div>
+          <div class="form-group">
+            <label for="registerPassword">Password:</label>
+            <input type="password" id="registerPassword" required>
+          </div>
+          <div class="form-group">
+            <label for="registerRole">Role:</label>
+            <select id="registerRole" required>
+              <option value="">Select Role</option>
+              <option value="user">User</option>
+              <option value="driver">Driver</option>
+            </select>
+          </div>
+          <button type="submit" class="btn">Register</button>
+          <a href="index.html" class="btn btn-secondary">Back to Login</a>
+        </form>
+      </div>
+    </div>
+  </div>
+  <script>
+    const API_BASE = "http://localhost:3000";
+
+    function showAlert(id, message, type = 'success') {
+      const alert = document.getElementById(id);
+      alert.textContent = message;
+      alert.className = `alert alert-${type} show`;
+      setTimeout(() => alert.classList.remove('show'), 3000);
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+      const registerForm = document.getElementById('registerForm');
+
+      registerForm.addEventListener('submit', async function (e) {
+        e.preventDefault();
+
+        const username = document.getElementById('registerUsername').value;
+        const email = document.getElementById('registerEmail').value;
+        const password = document.getElementById('registerPassword').value;
+        const role = document.getElementById('registerRole').value;
+
+        try {
+          const response = await fetch(`${API_BASE}/register`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ username, email, password, role })
+          });
+
+          const data = await response.json();
+
+          if (response.ok) {
+            showAlert('registerAlert', 'Registration successful! Please login.', 'success');
+            setTimeout(() => {
+              window.location.href = 'index.html';
+            }, 1500);
+          } else {
+            showAlert('registerAlert', data.error || 'Registration failed', 'error');
+          }
+        } catch (err) {
+          showAlert('registerAlert', 'Network error. Please try again.', 'error');
+        }
+      });
+    });
+  </script>
+</body>
+</html>

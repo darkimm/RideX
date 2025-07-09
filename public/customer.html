@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RideX - Customer Dashboard</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container">
+    <div id="customerDashboard" class="page active">
+      <div class="nav-bar">
+        <h2>🚗 RideX - Customer Dashboard</h2>
+        <div class="nav-links">
+          <button class="active" onclick="showCustomerSection('book-ride')">Book Ride</button>
+          <button onclick="showCustomerSection('my-rides')">My Rides</button>
+          <button class="logout-btn" onclick="logout()">Logout</button>
+        </div>
+      </div>
+
+      <div class="content">
+        <!-- Book Ride Section -->
+        <div id="book-ride" class="dashboard-section">
+          <h2>Book a New Ride</h2>
+          <div class="card">
+            <div class="alert" id="bookingAlert"></div>
+            <form id="bookRideForm">
+              <div class="form-group">
+                <label for="pickupLocation">Pickup Location:</label>
+                <input type="text" id="pickupLocation" required>
+              </div>
+              <div class="form-group">
+                <label for="destination">Destination:</label>
+                <input type="text" id="destination" required>
+              </div>
+              <div class="form-group">
+                <label for="distance">Distance (km):</label>
+                <input type="number" id="distance" required>
+              </div>
+              <div class="form-group">
+                <label for="fare">Fare (RM):</label>
+                <input type="number" id="fare" step="0.01" required>
+              </div>
+              <button type="submit" class="btn">Book Ride</button>
+            </form>
+          </div>
+        </div>
+
+        <!-- My Rides Section -->
+        <div id="my-rides" class="dashboard-section" style="display: none;">
+          <h2>My Rides</h2>
+          <div id="ridesContainer">
+            <div class="loading">Loading rides...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = 'http://localhost:3000';
+    const authToken = localStorage.getItem('authToken');
+    const customerId = localStorage.getItem('userId');
+
+    function showAlert(id, message, type = 'success') {
+      const alert = document.getElementById(id);
+      alert.textContent = message;
+      alert.className = `alert alert-${type} show`;
+      setTimeout(() => alert.classList.remove('show'), 3000);
+    }
+
+    function logout() {
+      localStorage.clear();
+      window.location.href = 'index.html';
+    }
+
+    function showCustomerSection(sectionId) {
+      document.querySelectorAll('.dashboard-section').forEach(section => {
+        section.style.display = 'none';
+      });
+      document.getElementById(sectionId).style.display = 'block';
+
+      document.querySelectorAll('.nav-links button').forEach(btn => {
+        btn.classList.remove('active');
+      });
+      event.target.classList.add('active');
+
+      if (sectionId === 'my-rides') {
+        loadMyRides();
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      document.getElementById('bookRideForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        const pickupLocation = document.getElementById('pickupLocation').value;
+        const destination = document.getElementById('destination').value;
+        const distance = parseFloat(document.getElementById('distance').value);
+        const fare = parseFloat(document.getElementById('fare').value);
+
+        try {
+          const response = await fetch(`${API_BASE}/rides`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${authToken}`
+            },
+            body: JSON.stringify({
+              customerId,
+              pickupLocation,
+              destination,
+              distance,
+              fare
+            })
+          });
+
+          const data = await response.json();
+
+          if (response.ok) {
+            showAlert('bookingAlert', 'Ride booked successfully!', 'success');
+            document.getElementById('bookRideForm').reset();
+          } else {
+            showAlert('bookingAlert', data.error || 'Booking failed', 'error');
+          }
+        } catch (err) {
+          showAlert('bookingAlert', 'Network error. Please try again.', 'error');
+        }
+      });
+    });
+
+    async function loadMyRides() {
+      const container = document.getElementById('ridesContainer');
+      container.innerHTML = '<div class="loading">Loading rides...</div>';
+
+      try {
+        const res = await fetch(`${API_BASE}/users/${customerId}/rides`, {
+          headers: { Authorization: `Bearer ${authToken}` }
+        });
+
+        const rides = await res.json();
+
+        if (!rides.length) {
+          container.innerHTML = '<p>No rides found.</p>';
+          return;
+        }
+
+        container.innerHTML = rides.map(r => `
+          <div class="ride-card">
+            <h3>${r.destination}</h3>
+            <p><strong>From:</strong> ${r.pickupLocation}</p>
+            <p><strong>Distance:</strong> ${r.distance} km</p>
+            <p><strong>Fare:</strong> RM ${r.fare.toFixed(2)}</p>
+            <span class="status-badge ${r.status === 'completed' ? 'status-completed' : r.status === 'accepted' ? 'status-accepted' : 'status-pending'}">
+              ${r.status === 'completed' ? 'Completed' : r.status === 'accepted' ? 'Accepted by Driver' : 'Waiting for Driver'}
+            </span>
+          </div>
+        `).join('');
+      } catch (err) {
+        container.innerHTML = '<p>Error loading rides.</p>';
+      }
+    }
+  </script>
+</body>
+</html>

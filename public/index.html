@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RideX - Login</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container">
+    <div id="loginPage" class="page active">
+      <div class="header">
+        <h1>🚗 RideX</h1>
+        <p>Your Premium Ride Sharing Platform</p>
+      </div>
+      <div class="content">
+        <div class="alert" id="loginAlert"></div>
+        <form id="loginForm">
+          <div class="form-group">
+            <label for="loginEmail">Email:</label>
+            <input type="email" id="loginEmail" required>
+          </div>
+          <div class="form-group">
+            <label for="loginPassword">Password:</label>
+            <input type="password" id="loginPassword" required>
+          </div>
+          <div class="form-group">
+            <label for="loginRole">Role:</label>
+            <select id="loginRole" required>
+              <option value="">Select Role</option>
+              <option value="user">User</option>
+              <option value="driver">Driver</option>
+              <option value="admin">Admin</option>
+            </select>
+          </div>
+          <button type="submit" class="btn">Login</button>
+          <a href="register.html" class="btn btn-secondary">Register</a>
+        </form>
+      </div>
+    </div>
+  </div>
+  <script>
+    const API_BASE = "http://localhost:3000";
+
+    function showAlert(id, message, type = 'success') {
+      const alert = document.getElementById(id);
+      alert.textContent = message;
+      alert.className = `alert alert-${type} show`;
+      setTimeout(() => alert.classList.remove('show'), 3000);
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+      const loginForm = document.getElementById('loginForm');
+      if (loginForm) {
+        loginForm.addEventListener('submit', async function (e) {
+          e.preventDefault();
+
+          const email = document.getElementById('loginEmail').value;
+          const password = document.getElementById('loginPassword').value;
+          const role = document.getElementById('loginRole').value;
+
+          try {
+            const response = await fetch(`${API_BASE}/auth/login`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ email, password, role })
+            });
+            const data = await response.json();
+            if (response.ok) {
+              localStorage.setItem('authToken', data.token);
+              localStorage.setItem('userId', data.userId);
+              localStorage.setItem('role', data.role);
+              showAlert('loginAlert', 'Login successful!', 'success');
+              if (role === 'user') {window.location.href = 'customer.html';
+              } else if (role === 'driver') {window.location.href = 'driver.html';
+              } else if (role === 'admin') {window.location.href = 'admin.html';
+              }
+            } else {
+              showAlert('loginAlert', data.error || 'Login failed', 'error');
+            }
+          } catch (err) {
+            showAlert('loginAlert', 'Network error. Please try again.', 'error');
+          }
+        });
+      }
+    });
+  </script>
+</body>
+</html>

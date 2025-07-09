@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RideX - Admin Dashboard</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container">
+    <div id="adminDashboard" class="page active">
+      <div class="nav-bar">
+        <h2>🚗 RideX - Admin Dashboard</h2>
+        <div class="nav-links">
+          <button class="active" onclick="showAdminSection('users')">Users</button>
+          <button onclick="showAdminSection('drivers')">Drivers</button>
+          <button onclick="showAdminSection('analytics')">Analytics</button>
+          <button class="logout-btn" onclick="logout()">Logout</button>
+        </div>
+      </div>
+
+      <div class="content">
+        <!-- Users Management -->
+        <div id="users" class="dashboard-section">
+          <h2>Users Management</h2>
+          <div class="card">
+            <button class="btn" onclick="loadUsers()">Refresh Users</button>
+            <div id="usersContainer">
+              <div class="loading">Loading users...</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Drivers Management -->
+        <div id="drivers" class="dashboard-section" style="display: none;">
+          <h2>Drivers Management</h2>
+          <div class="card">
+            <div class="alert" id="driverStatusAlert"></div>
+            <div id="driversContainer">
+              <div class="loading">Loading drivers...</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Analytics -->
+        <div id="analytics" class="dashboard-section" style="display: none;">
+          <h2>Analytics</h2>
+          <div class="stats-grid">
+            <div class="stat-card">
+              <h3 id="totalPassengers">-</h3>
+              <p>Total Passengers</p>
+            </div>
+            <div class="stat-card">
+              <h3 id="totalRides">-</h3>
+              <p>Total Rides</p>
+            </div>
+            <div class="stat-card">
+              <h3 id="totalRevenue">-</h3>
+              <p>Total Revenue (RM)</p>
+            </div>
+            <div class="stat-card">
+              <h3 id="activeDrivers">-</h3>
+              <p>Active Drivers</p>
+            </div>
+          </div>
+          <button class="btn" onclick="loadAnalytics()">Refresh Analytics</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal -->
+  <div id="editUserModal" class="modal">
+    <div class="modal-content">
+      <span class="close" onclick="closeModal()">&times;</span>
+      <h2>Edit User</h2>
+      <form id="editUserForm">
+        <div class="form-group">
+          <label for="editUsername">Username:</label>
+          <input type="text" id="editUsername" required>
+        </div>
+        <div class="form-group">
+          <label for="editEmail">Email:</label>
+          <input type="email" id="editEmail" required>
+        </div>
+        <div class="form-group">
+          <label for="editRole">Role:</label>
+          <select id="editRole" required>
+            <option value="user">User</option>
+            <option value="driver">Driver</option>
+            <option value="admin">Admin</option>
+          </select>
+        </div>
+        <button type="submit" class="btn">Update</button>
+        <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      </form>
+    </div>
+  </div>
+  <script>
+  const API_BASE = "http://localhost:3000";
+
+  document.addEventListener('DOMContentLoaded', () => {
+    const role = localStorage.getItem('role');
+    if (role === 'admin') {
+      loadUsers();
+    }
+  });
+
+  async function loadUsers() {
+    const token = localStorage.getItem('authToken');
+    try {
+      const response = await fetch(`${API_BASE}/admin/users`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (!response.ok) throw new Error('Failed to fetch users');
+
+      const users = await response.json();
+      displayUsers(users);
+    } catch (err) {
+      document.getElementById('usersContainer').innerHTML = `<p>Error: ${err.message}</p>`;
+    }
+  }
+
+  function displayUsers(users) {
+    const container = document.getElementById('usersContainer');
+    if (users.length === 0) {
+      container.innerHTML = '<p>No users found</p>';
+      return;
+    }
+
+    const table = `
+      <table class="user-table">
+        <thead>
+          <tr><th>Username</th><th>Email</th><th>Role</th></tr>
+        </thead>
+        <tbody>
+          ${users.map(u => `
+            <tr>
+              <td>${u.username}</td>
+              <td>${u.email}</td>
+              <td>${u.role}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    `;
+    container.innerHTML = table;
+  }
+
+  async function loadDrivers() {
+    const token = localStorage.getItem('authToken');
+    try {
+      const response = await fetch(`${API_BASE}/admin/drivers`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (!response.ok) throw new Error('Failed to fetch drivers');
+
+      const drivers = await response.json();
+      displayDrivers(drivers);
+    } catch (err) {
+      document.getElementById('driversContainer').innerHTML = `<p>Error: ${err.message}</p>`;
+    }
+  }
+
+  function displayDrivers(drivers) {
+    const container = document.getElementById('driversContainer');
+    if (drivers.length === 0) {
+      container.innerHTML = '<p>No drivers found</p>';
+      return;
+    }
+
+    const table = `
+      <table class="user-table">
+        <thead>
+          <tr><th>Name</th><th>Email</th><th>Status</th><th>Actions</th></tr>
+        </thead>
+        <tbody>
+          ${drivers.map(driver => `
+            <tr>
+              <td>${driver.name}</td>
+              <td>${driver.email}</td>
+              <td>${driver.status}</td>
+              <td>
+                <button class="btn btn-success" onclick="updateDriverStatus('${driver._id}', 'approved')">Approve</button>
+                <button class="btn btn-danger" onclick="updateDriverStatus('${driver._id}', 'rejected')">Reject</button>
+              </td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    `;
+    container.innerHTML = table;
+  }
+
+  async function updateDriverStatus(driverId, status) {
+    const token = localStorage.getItem('authToken');
+
+    try {
+      const response = await fetch(`${API_BASE}/drivers/${driverId}/status`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ status })
+      });
+
+      if (!response.ok) throw new Error('Failed to update driver status');
+
+      document.getElementById('driverStatusAlert').textContent = `Driver ${status} successfully.`;
+      loadDrivers();
+    } catch (err) {
+      document.getElementById('driverStatusAlert').textContent = err.message;
+    }
+  }
+
+  function showAdminSection(sectionId) {
+    document.querySelectorAll('.dashboard-section').forEach(sec => sec.style.display = 'none');
+    document.getElementById(sectionId).style.display = 'block';
+
+    document.querySelectorAll('.nav-links button').forEach(btn => btn.classList.remove('active'));
+    event.target.classList.add('active');
+
+    if (sectionId === 'users') loadUsers();
+    if (sectionId === 'drivers') loadDrivers();
+    if (sectionId === 'analytics') loadAnalytics();
+  }
+
+  async function loadAnalytics() {
+    const token = localStorage.getItem('authToken');
+    try {
+      const response = await fetch(`${API_BASE}/analytics/passengers`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (!response.ok) throw new Error('Failed to fetch analytics');
+      const data = await response.json();
+
+      const totalPassengers = data.length;
+      const totalRides = data.reduce((sum, p) => sum + (p.totalRides || 0), 0);
+      const totalRevenue = data.reduce((sum, p) => sum + (p.totalFare || 0), 0);
+      const activeDrivers = data.filter(p => p.totalRides > 0).length;
+
+      document.getElementById('totalPassengers').textContent = totalPassengers;
+      document.getElementById('totalRides').textContent = totalRides;
+      document.getElementById('totalRevenue').textContent = totalRevenue.toFixed(2);
+      document.getElementById('activeDrivers').textContent = activeDrivers;
+
+    } catch (err) {
+      console.error('Analytics error:', err);
+    }
+  }
+
+  function logout() {
+    localStorage.clear();
+    window.location.href = 'index.html';
+  }
+</script>
+  <script src="js/ridex.js"></script>
+</body>
+</html>

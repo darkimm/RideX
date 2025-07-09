@@ -33,7 +33,7 @@ async function connectToMongoDB() {
 connectToMongoDB();
 
 app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    res.sendFile(path.join(__dirname, 'public'));
 });
 
 // --- API ROUTES ---
@@ -63,40 +63,61 @@ const authorize = (roles) => (req, res, next) => {
 //---------------------------users---------------------------------//
 
 app.post('/register', async (req, res) => {
-    const { username, email, password, role } = req.body;
-    
-    // Basic validation
-    if (!username || !email || !password || !role) {
-        return res.status(400).json({ error: 'Missing required fields' });
+  const { username, email, password, role } = req.body;
+
+  if (!username || !email || !password || !role) {
+    return res.status(400).json({ error: 'Missing required fields' });
+  }
+
+  if (!['user', 'admin', 'driver'].includes(role)) {
+    return res.status(400).json({ error: 'Invalid role specified' });
+  }
+
+  try {
+    const existing = await db.collection('users').findOne({ email });
+    if (existing) {
+      return res.status(409).json({ error: 'User already exists' });
     }
 
-    if (!['user', 'admin', 'driver'].includes(role)) {
-        return res.status(400).json({ error: 'Invalid role specified' });
-    }
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const result = await db.collection('users').insertOne({
+      username,
+      email,
+      password: hashedPassword,
+      role,
+      createdAt: new Date()
+    });
 
-    try {
-        const hashedPassword = await bcrypt.hash(req.body.password, saltRounds);
-        const user = {...req.body, password: hashedPassword};
-        const existing = await db.collection('users').findOne({ email });
-        if (existing) {
-            return res.status(409).json({ error: 'User already exists' });
-        }
-
-        const result = await db.collection('users').insertOne({
-            username,
-            email,
-            password: hashedPassword,
-            role,
-            createdAt: new Date()
+    // Insert into drivers collection
+    if (role === 'driver') {
+      try {
+        await db.collection('drivers').insertOne({
+          driverId: result.insertedId,   // ✅ match your DB structure
+          name: username,
+          email,
+          phone: "",                     // can be updated later
+          password: hashedPassword,
+          status: 'pending',
+          vehicle: {
+            plateNumber: "",
+            model: "",
+            color: ""
+          },
+          createdAt: new Date()
         });
-
-        res.status(201).json({ message: 'Account registered successfully', userId: result.insertedId });
-    } catch (err) {
-        console.error('Registration error:', err);
-        res.status(500).json({ error: 'Failed to register account' });
+        console.log("✅ Driver inserted into drivers collection");
+      } catch (driverErr) {
+        console.error("❌ Failed to insert into drivers:", driverErr);
+      }
     }
-});
 
+
+    res.status(201).json({ message: 'Account registered successfully', userId: result.insertedId });
+  } catch (err) {
+    console.error('❌ Registration error:', err);
+    res.status(500).json({ error: 'Failed to register account' });
+  }
+});
 
 app.post('/auth/login', async (req, res) => {
     const { email, password, role } = req.body;
@@ -132,118 +153,149 @@ app.post('/auth/login', async (req, res) => {
 });
 
 app.post('/rides', async (req, res) => {
-    const { customerId, pickupLocation, destination, distance, fare, scheduledTime, driverId } = req.body;
+  const {
+    customerId,
+    pickupLocation,
+    destination,
+    distance,
+    fare,
+    scheduledTime
+    // intentionally ignoring driverId during ride creation
+  } = req.body;
 
-    if (!customerId || !pickupLocation || !destination || !distance == null || !fare == null) {
-        return res.status(400).json({ error: 'Missing required fields: customerId, pickupLocation, destination' });
-    }
+  if (!customerId || !pickupLocation || !destination || distance == null || fare == null) {
+    return res.status(400).json({ error: 'Missing required fields: customerId, pickupLocation, destination, distance, or fare' });
+  }
 
-    if(typeof distance !== 'number' || distance <= 0) {
-        return res.status(400).json({ error: 'Distance must be positive number' });
-    }
+  if (typeof distance !== 'number' || distance <= 0) {
+    return res.status(400).json({ error: 'Distance must be a positive number' });
+  }
 
-    if(typeof fare !== 'number' || fare <= 0) {
-        return res.status(400).json({ error: 'Distance must be positive number' });
-    }
+  if (typeof fare !== 'number' || fare <= 0) {
+    return res.status(400).json({ error: 'Fare must be a positive number' });
+  }
 
-    const ride = {
-        customerId: customerId,
-        pickupLocation: pickupLocation,
-        destination: destination,
-        scheduledTime: scheduledTime ? new Date(scheduledTime) : new Date(),
-        distance: distance,
-        fare: fare,
-        status: 'pending',
-        createdAt: new Date(),
-        driverId: driverId 
-    };
+  const ride = {
+    customerId,
+    pickupLocation,
+    destination,
+    scheduledTime: scheduledTime ? new Date(scheduledTime) : new Date(),
+    distance,
+    fare,
+    status: 'pending',
+    createdAt: new Date()
+    // 🔥 No driverId included here to keep it unassigned
+  };
 
-    try {
-        const result = await db.collection('rides').insertOne(ride);
-        res.status(201).json({
-            message: 'Ride booked successfully',
-            rideId: result.insertedId
-        });
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'Failed to book ride' });
-    }
+  try {
+    const result = await db.collection('rides').insertOne(ride);
+    res.status(201).json({
+      message: 'Ride booked successfully',
+      rideId: result.insertedId
+    });
+  } catch (err) {
+    console.error('❌ Ride booking error:', err);
+    res.status(500).json({ error: 'Failed to book ride' });
+  }
 });
 
-app.get('/driver/viewprofile', authenticate, async (req, res) => {
-    try {
-        const customerId = req.user.userId;
-
-        // Find the most recent ride of the user with an assigned driver
-        const ride = await db.collection('rides').findOne(
-            { customerId: customerId, driverId: { $exists: true } },
-            { sort: { createdAt: -1 } }
-        );
-
-        if (!ride || !ride.driverId) {
-            return res.status(404).json({ message: "No driver assigned to your ride yet" });
-        }
-
-        const driver = await db.collection('drivers').findOne({ driverId: ride.driverId });
-
-        if (!driver) {
-            return res.status(404).json({ message: "Driver not found" });
-        }
-
-        res.status(200).json(driver);
-    } catch (err) {
-        console.error('Error fetching driver profile:', err);
-        res.status(500).json({ error: 'Failed to retrieve driver profile' });
-    }
+app.get('/users/:id/rides', authenticate, async (req, res) => {
+  const userId = req.params.id;
+  try {
+    const rides = await db.collection('rides')
+      .find({ customerId: userId })
+      .sort({ createdAt: -1 })
+      .toArray();
+    res.json(rides);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch rides' });
+  }
 });
+
 
 //----------------------End User------------------------//
 
 //______________________Driver_________________________//
 
-app.post('/drivers/profile', async (req, res) => {
-    const { driverId, name, email, phone, password, vehicle } = req.body;
+app.put('/drivers/:id/profile', authenticate, authorize(['driver']), async (req, res) => {
+  const { name, email, phone, password, vehicle } = req.body;
 
-    if (!driverId || !name || !email || !phone || !password) {
-        return res.status(400).json({ error: "Missing required driver information" });
+  if (!name || !email || !phone || !password || !vehicle) {
+    return res.status(400).json({ error: "Missing required fields" });
+  }
+
+  try {
+    const result = await db.collection('drivers').updateOne(
+      { driverId: req.params.id },
+      { $set: { name, email, phone, password, vehicle } }
+    );
+
+    if (result.modifiedCount === 0) {
+      return res.status(404).json({ error: "Driver not found or no changes made" });
     }
 
-    try {
-        const existing = await db.collection('drivers').findOne({ driverId });
-        if (existing) {
-            return res.status(409).json({ error: "Driver already registered with this ID" });
-        }
-
-        const driver = {
-            driverId,
-            name,
-            email,
-            phone,
-            password,
-            vehicle,
-            status: "pending",
-            createdAt: new Date()
-        };
-
-        const result = await db.collection('drivers').insertOne(driver);
-        res.status(201).json({ message: "Driver registered", id: result.insertedId });
-    } catch (err) {
-        res.status(500).json({ error: "Failed to register driver" });
-    }
+    res.status(200).json({ message: "Driver profile updated successfully" });
+  } catch (err) {
+    console.error("Update driver profile error:", err);
+    res.status(500).json({ error: "Failed to update driver profile" });
+  }
 });
 
+app.get('/rides/unassigned', authenticate, authorize(['driver']), async (req, res) => {
+  try {
+    const rides = await db.collection('rides').find({ driverId: { $exists: false }, status: 'pending' }).toArray();
+    res.status(200).json(rides);
+  } catch (err) {
+    console.error('Error fetching unassigned rides:', err);
+    res.status(500).json({ error: 'Failed to load rides' });
+  }
+});
 
-app.put('/drivers/:id/vehicle', async (req, res) => {
-    try {
-        const result = await db.collection('drivers').updateOne(
-            { _id: new ObjectId(req.params.id) },
-            { $set: { vehicle: req.body.vehicle } }
-        );
+app.put('/rides/:id/accept', authenticate, authorize(['driver']), async (req, res) => {
+  const rideId = req.params.id;
+  const driverId = req.user.userId;
 
-        res.status(200).json({ updated: result.modifiedCount });
-    } catch (err) {
-        res.status(400).json({ error: "Failed to update vehicle details" });
+  try {
+    const result = await db.collection('rides').updateOne(
+      { _id: new ObjectId(rideId), driverId: { $exists: false } },
+      {
+        $set: {
+          driverId: driverId,
+          status: 'accepted'
+        }
+      }
+    );
+
+    if (result.modifiedCount === 0) {
+      return res.status(400).json({ error: 'Ride already assigned or not found' });
     }
+
+    res.status(200).json({ message: 'Ride accepted' });
+  } catch (err) {
+    console.error('Accept ride error:', err);
+    res.status(500).json({ error: 'Failed to accept ride' });
+  }
+});
+
+app.put('/drivers/:id/vehicle', authenticate, authorize(['driver']), async (req, res) => {
+  const driverId = req.params.id;  // This is the userId from localStorage
+  const vehicle = req.body.vehicle;
+
+  try {
+    const result = await db.collection('drivers').updateOne(
+      { driverId: driverId }, // ✅ Match by driverId field (not _id)
+      { $set: { vehicle: vehicle } }
+    );
+
+    if (result.modifiedCount === 0) {
+      return res.status(404).json({ error: "Driver not found or no changes made" });
+    }
+
+    res.status(200).json({ message: "Vehicle updated successfully" });
+  } catch (err) {
+    console.error("Vehicle update error:", err);
+    res.status(500).json({ error: "Failed to update vehicle details" });
+  }
 });
 
 app.put('/rides/:id/ridestatus', async (req, res) => {
@@ -296,6 +348,17 @@ app.get('/admin/users', authenticate, authorize(['admin']), async (req, res) => 
       res.status(500).json({ error: 'Failed to fetch users' });
     }
 });
+
+app.get('/admin/drivers', authenticate, authorize(['admin']), async (req, res) => {
+  try {
+    const drivers = await db.collection('drivers').find().toArray();
+    res.status(200).json(drivers);
+  } catch (err) {
+    console.error('Fetch drivers error:', err);
+    res.status(500).json({ error: 'Failed to fetch drivers' });
+  }
+});
+
 
 app.put('/users/:id', async (req, res) => {
     try {

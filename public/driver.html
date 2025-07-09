@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RideX - Driver Dashboard</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container">
+    <div id="driverDashboard" class="page active">
+      <div class="nav-bar">
+        <h2>🚗 RideX - Driver Dashboard</h2>
+        <div class="nav-links">
+          <button class="active" onclick="showDriverSection('profile')">Profile</button>
+          <button onclick="showDriverSection('available')">Available Rides</button>
+          <button onclick="showDriverSection('vehicle')">Vehicle</button>
+          <button class="logout-btn" onclick="logout()">Logout</button>
+        </div>
+      </div>
+
+      <div class="content">
+        <!-- Profile Section -->
+        <div id="profile" class="dashboard-section">
+          <h2>Driver Profile</h2>
+          <div class="card">
+            <div class="alert" id="driverProfileAlert"></div>
+            <form id="driverProfileForm">
+              <div class="form-group">
+                <label for="driverName">Name:</label>
+                <input type="text" id="driverName" required>
+              </div>
+              <div class="form-group">
+                <label for="driverEmail">Email:</label>
+                <input type="email" id="driverEmail" required>
+              </div>
+              <div class="form-group">
+                <label for="driverPassword">Password:</label>
+                <input type="password" id="driverPassword" required>
+              </div>
+              <div class="form-group">
+                <label for="driverPhone">Phone:</label>
+                <input type="tel" id="driverPhone" required>
+              </div>
+              <h3>Vehicle Info</h3>
+              <div class="form-group">
+                <label for="plateNumber">Plate Number:</label>
+                <input type="text" id="plateNumber" required>
+              </div>
+              <div class="form-group">
+                <label for="vehicleModel">Model:</label>
+                <input type="text" id="vehicleModel" required>
+              </div>
+              <div class="form-group">
+                <label for="vehicleColor">Color:</label>
+                <input type="text" id="vehicleColor" required>
+              </div>
+              <button type="submit" class="btn">Update Profile</button>
+            </form>
+          </div>
+        </div>
+
+        <!-- Available Rides Section -->
+        <div id="available" class="dashboard-section" style="display:none">
+          <h2>Available Rides</h2>
+          <div class="alert" id="availableAlert"></div>
+          <div id="availableRidesContainer"><div class="loading">Loading available rides...</div></div>
+        </div>
+
+        <!-- Vehicle Section -->
+        <div id="vehicle" class="dashboard-section" style="display:none">
+          <h2>Vehicle Management</h2>
+          <div class="card">
+            <div class="alert" id="vehicleAlert"></div>
+            <form id="vehicleUpdateForm">
+              <div class="form-group">
+                <label for="updatePlateNumber">Plate Number:</label>
+                <input type="text" id="updatePlateNumber" required>
+              </div>
+              <div class="form-group">
+                <label for="updateVehicleModel">Model:</label>
+                <input type="text" id="updateVehicleModel" required>
+              </div>
+              <div class="form-group">
+                <label for="updateVehicleColor">Color:</label>
+                <input type="text" id="updateVehicleColor" required>
+              </div>
+              <button type="submit" class="btn">Update Vehicle</button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = 'http://localhost:3000';
+    const authToken = localStorage.getItem('authToken');
+    const driverId = localStorage.getItem('userId');
+
+    function logout() {
+      localStorage.clear();
+      location.href = 'index.html';
+    }
+
+    function showDriverSection(sectionId) {
+      document.querySelectorAll('.dashboard-section').forEach(s => s.style.display = 'none');
+      document.getElementById(sectionId).style.display = 'block';
+      document.querySelectorAll('.nav-links button').forEach(btn => btn.classList.remove('active'));
+      event.target.classList.add('active');
+
+      if (sectionId === 'available') loadAvailableRides();
+    }
+
+    async function loadAvailableRides() {
+      const container = document.getElementById('availableRidesContainer');
+      container.innerHTML = '<div class="loading">Loading...</div>';
+      try {
+        const res = await fetch(`${API_BASE}/rides/unassigned`, {
+          headers: { Authorization: `Bearer ${authToken}` }
+        });
+        const rides = await res.json();
+        if (!rides.length) return container.innerHTML = '<p>No unassigned rides.</p>';
+        container.innerHTML = rides.map(r => `
+          <div class="ride-card">
+            <h3>${r.destination}</h3>
+            <p>From: ${r.pickupLocation}</p>
+            <p>Fare: RM ${r.fare}</p>
+            <button class="btn btn-success" onclick="acceptRide('${r._id}')">Accept</button>
+          </div>`).join('');
+      } catch {
+        container.innerHTML = '<p>Network error loading available rides.</p>';
+      }
+    }
+
+    async function acceptRide(id) {
+      try {
+        const res = await fetch(`${API_BASE}/rides/${id}/accept`, {
+          method: 'PUT',
+          headers: { Authorization: `Bearer ${authToken}` }
+        });
+        const data = await res.json();
+        if (res.ok) {
+          showAlert('availableAlert', 'Ride accepted!');
+          loadAvailableRides();
+        } else {
+          showAlert('availableAlert', data.error || 'Failed to accept', 'error');
+        }
+      } catch {
+        showAlert('availableAlert', 'Network error', 'error');
+      }
+    }
+
+    function showAlert(id, msg, type = 'success') {
+      const el = document.getElementById(id);
+      el.textContent = msg;
+      el.className = `alert alert-${type} show`;
+      setTimeout(() => el.classList.remove('show'), 3000);
+    }
+
+    document.getElementById('driverProfileForm').addEventListener('submit', async e => {
+      e.preventDefault();
+      const profile = {
+        name: driverName.value,
+        email: driverEmail.value,
+        password: driverPassword.value,
+        phone: driverPhone.value,
+        vehicle: {
+          plateNumber: plateNumber.value,
+          model: vehicleModel.value,
+          color: vehicleColor.value
+        }
+      };
+      try {
+        const res = await fetch(`${API_BASE}/drivers/${driverId}/profile`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${authToken}`
+          },
+          body: JSON.stringify(profile)
+        });
+        const data = await res.json();
+        if (res.ok) showAlert('driverProfileAlert', 'Updated successfully');
+        else showAlert('driverProfileAlert', data.error || 'Update failed', 'error');
+      } catch {
+        showAlert('driverProfileAlert', 'Network error', 'error');
+      }
+    });
+
+    document.getElementById('vehicleUpdateForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const vehicle = {
+        plateNumber: document.getElementById('updatePlateNumber').value,
+        model: document.getElementById('updateVehicleModel').value,
+        color: document.getElementById('updateVehicleColor').value,
+      };
+
+      try {
+        const res = await fetch(`${API_BASE}/drivers/${driverId}/vehicle`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${authToken}`
+          },
+          body: JSON.stringify({ vehicle })
+        });
+
+        const data = await res.json();
+
+        if (res.ok) {
+          showAlert('vehicleAlert', 'Vehicle updated successfully!');
+        } else {
+          showAlert('vehicleAlert', data.error || 'Update failed', 'error');
+        }
+      } catch {
+        showAlert('vehicleAlert', 'Network error', 'error');
+      }
+    });
+  </script>
+</body>
+</html>
